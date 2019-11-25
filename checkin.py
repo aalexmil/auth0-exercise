@@ -1,4 +1,7 @@
 #! /usr/bin/env python
+#	Goal: read inventory.csv, parse ['Last Check-in'] as a DateTime, and compare with a DateTime of three weeks ago. 
+# 	Compatibility: Python 2, Python 3
+# 	Possible improvements: integrate with the Directory CSV file
 
 import csv
 from datetime import datetime, timedelta
@@ -20,11 +23,9 @@ def scanInventoryCSVForStaleCheckins():
 			checkInDateTime = datetime.strptime(row['Last Check-in'], '%m/%d/%y %H:%M') #convert to DateTime, importing month, day, year without century, 24-hour hour, minute
 			
 			threeWeeksAgoDateTime = datetime.now() - timedelta(days = 21) 
-			
-			if checkInDateTime > threeWeeksAgoDateTime:
-				print ("Fresh check in, on:", checkInDateTime)
-			else:
-				print ("Stale check in, on:", checkInDateTime, "User: ", row['Name']) #would be nice to grab the email address from the other CSV
+			sinceLastCheckInDateTime = datetime.now() - checkInDateTime
+			if checkInDateTime < threeWeeksAgoDateTime:
+				print (row['Name'], "has a device", row['Serial Number'], "which hasn't checked in for", sinceLastCheckInDateTime.days, "days")
 
 
 scanInventoryCSVForStaleCheckins()
