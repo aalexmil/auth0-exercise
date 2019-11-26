@@ -1,57 +1,64 @@
 #! /usr/bin/env python
-#	Goal: read directory.csv, combine [first_name] and [last_name], match to Inventory on ['Name'], return ['Serial Number']
+#	Goal: read directory.csv and inventory.csv from AWS S3, combine [first_name] and [last_name], match to Inventory on ['Name'], find users without tech, output friendly result to Slack.
 #	Compatibility: Python 3
-# 	Possible improvements: This is a brute force version; in the future, consider building/scanning an array
+# 	Possible improvements: perform error/null response checking
 
 import csv
 import json
-import ssl
 import http.client #not included with Python 2.x
 import socket
 
-noComputer = 0
-usersWithoutTechList = []
-def scanForUnassignedComputers():
+def lookForDirectoryUsersWithoutInventoryOnS3():
 	
-	with open('directory.csv') as csvfile:
-		csvInputFile = csv.DictReader(csvfile)
-		for row in csvInputFile:
-			fullName = row['first_name']  + " " + row['last_name']
-			lookForName(fullName)
-	rawTextToSendToSlack = "There are " + str(len(usersWithoutTechList)) + " users without assets assigned in Jamf:"
-	for i in range( len(usersWithoutTechList) ): 
-		rawTextToSendToSlack += '\n'
-		rawTextToSendToSlack += usersWithoutTechList[i]
-	sendDataToSlack( {'text': rawTextToSendToSlack} )
+	rawTextToSendToSlack = ""
 	
+	connDirectory = http.client.HTTPSConnection("REDACTED-public.s3.ca-central-1.amazonaws.com")
+	connDirectory.request("GET", "/directory.csv")
+	resDirectory = connDirectory.getresponse()
+	receivedDirectoryData = resDirectory.read()
+	receivedDirectoryData = receivedDirectoryData.decode("utf-8")
+	receivedDirectoryDataToParse = receivedDirectoryData.splitlines() #splits on newline characters - otherwise it's just a blob
+	
+	connInventory = http.client.HTTPSConnection("REDACTED-public.s3.ca-central-1.amazonaws.com")
+	connInventory.request("GET", "/inventory.csv")
+	resInventory = connInventory.getresponse()
+	receivedInventoryData = resInventory.read()
+	receivedInventoryData = receivedInventoryData.decode("utf-8")
+	receivedInventoryDataToParse = receivedInventoryData.splitlines() #splits on newline characters - otherwise it's just a blob
+	
+	
+	
+	readDirectoryCSV = csv.reader(receivedDirectoryDataToParse)
+	next(readDirectoryCSV, None)  # skip the header row
+	
+	for row in readDirectoryCSV:
+		fullName = row[0] + " " + row[1]			
 
-def lookForName(fullName):
-	result = 0
-	with open('inventory.csv') as csvfile:
-		csvInputFile = csv.DictReader(csvfile)
-		for row in csvInputFile:
-			if fullName == row['Name']:
+		readInventoryCSV = csv.reader(receivedInventoryDataToParse)
+		next(readInventoryCSV, None)  # skip the header row
+	
+		result = 0
+		for row in readInventoryCSV:
+			if fullName == row[1]:
 				result += 1
 				break
-	if result == 0:
-		#print ("No computer found for", fullName)
-		global usersWithoutTechList
-		usersWithoutTechList.append(fullName)
-		
-
-
-def sendDataToSlack(jsonData):
+		if result == 0:
+			rawTextToSendToSlack += "\n" + fullName + " does not have a device assigned in Jamf."
+			
+	sendDataToSlack( {'text': rawTextToSendToSlack} )
 	
+	
+def sendDataToSlack(jsonData):
+
 	print("Here's the data to go to Slack:", jsonData)
 	
 	conn = http.client.HTTPSConnection("hooks.slack.com")
 	headers = {'Content-type': 'application/json'}
 	dataToSlack = json.dumps(jsonData)
-	conn.request("POST", "/services/TQX1ESJBW/BQZASUF7Z/REDACTED", dataToSlack, headers=headers)
+	conn.request("POST", "/services/TQX1ESJBW/BQNRSNAHH/REDACTED", dataToSlack, headers=headers)
 	res = conn.getresponse()
 	data = res.read()
 	print(data.decode("utf-8"))
 	
 
-
-scanForUnassignedComputers()
+lookForDirectoryUsersWithoutInventoryOnS3()
